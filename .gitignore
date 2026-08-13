@@ -1,0 +1,8 @@
+.pi/git/
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+build/
+*.spec
