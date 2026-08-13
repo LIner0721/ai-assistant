@@ -42,3 +42,20 @@ class ChatView(QWidget):
     def clear_view(self) -> None:
         self._buffer = ""
         self._flush()
+
+    def on_task_event(self, event) -> None:
+        etype, payload = event.type, event.payload
+        if etype == "plan":
+            self._buffer += f"\n\n📋 **任务计划**\n\n{payload.get('plan', '')}\n"
+        elif etype == "step_start":
+            self._buffer += (f"\n▶ **第 {payload['step']} 步**："
+                             f"`{payload['tool']}`\n")
+        elif etype == "step_end":
+            icon = {"ok": "✅", "failed": "❌", "declined": "🚫"}.get(
+                payload.get("status"), "•")
+            self._buffer += f"{icon} 第 {payload['step']} 步完成\n"
+        elif etype == "done":
+            self._buffer += f"\n\n---\n\n✅ {payload.get('summary', '')}\n"
+        elif etype == "failed":
+            self._buffer += f"\n\n❌ {payload.get('summary', '')}\n"
+        self._flush()
