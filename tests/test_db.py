@@ -8,14 +8,15 @@ def test_migrate_creates_tables():
         "SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"sessions", "messages", "task_steps", "memories",
             "settings", "schema_version"} <= tables
-    assert db.schema_version() == 1
+    assert "memories_fts" in tables
+    assert db.schema_version() == 2
 
 
 def test_migrate_is_idempotent():
     db = Database(":memory:")
     db.migrate()
     db.migrate()
-    assert db.schema_version() == 1
+    assert db.schema_version() == 2
 
 
 def test_execute_and_query():

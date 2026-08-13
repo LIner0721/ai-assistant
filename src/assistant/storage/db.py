@@ -44,6 +44,12 @@ MIGRATIONS: list[str] = [
         value TEXT NOT NULL
     );
     """,
+    # v2: 记忆全文索引（trigram 分词，中文友好）
+    """
+    CREATE VIRTUAL TABLE memories_fts USING fts5(
+        content, tokenize='trigram'
+    );
+    """,
 ]
 
 
@@ -66,8 +72,9 @@ class Database:
             self._conn.commit()
 
     def schema_version(self) -> int:
-        row = self._conn.execute("SELECT version FROM schema_version").fetchone()
-        return int(row[0]) if row else 0
+        row = self._conn.execute(
+            "SELECT MAX(version) AS v FROM schema_version").fetchone()
+        return int(row["v"]) if row and row["v"] is not None else 0
 
     def execute(self, sql: str, params: tuple = ()) -> int:
         cur = self._conn.execute(sql, params)
