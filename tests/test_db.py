@@ -28,3 +28,27 @@ def test_execute_and_query():
         "VALUES (?, ?, '2026-01-01', '2026-01-01')", (sid, "测试"))
     row = db.query_one("SELECT title FROM sessions WHERE id = ?", (sid,))
     assert row["title"] == "测试"
+
+
+def test_cross_thread_usage():
+    import threading
+    db = Database(":memory:")
+    db.migrate()
+    errors = []
+
+    def worker(offset):
+        try:
+            for i in range(50):
+                db.execute(
+                    "INSERT INTO settings (key, value) VALUES (?, ?)",
+                    (f"k{offset}-{i}", "v"))
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors
+    assert db.query("SELECT COUNT(*) AS n FROM settings")[0]["n"] == 200
