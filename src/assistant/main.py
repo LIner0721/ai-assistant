@@ -9,6 +9,11 @@ from assistant.core.chat import ChatService
 from assistant.core.intent import IntentClassifier
 from assistant.core.sessions import SessionManager
 from assistant.core.tasks import TaskRouter
+from assistant.memory.extract import MemoryExtractor
+from assistant.memory.persona import PersonaManager
+from assistant.memory.resolve import MemoryResolver
+from assistant.memory.retrieve import MemoryRetriever
+from assistant.memory.store import MemoryStore
 from assistant.providers.registry import ProviderRegistry
 from assistant.storage.config import ConfigManager
 from assistant.storage.db import Database
@@ -21,7 +26,9 @@ from assistant.tools.files import FilesTool
 from assistant.tools.registry import ToolRegistry
 from assistant.tools.shell import ShellTool
 from assistant.ui.confirm_dialog import ConfirmDialog
+from assistant.ui.hotkey import HotkeyManager
 from assistant.ui.main_window import MainWindow
+from assistant.ui.tray import TrayIcon
 
 
 def _make_secrets() -> SecretsStore:
@@ -54,7 +61,17 @@ def main() -> None:
         secrets.get(cfg.models.provider) or "")
 
     sessions = SessionManager(db)
-    chat = ChatService(sessions, provider, model=lambda: cfg.models.model)
+
+    persona = PersonaManager(db)
+    memory_store = MemoryStore(db)
+    retriever = MemoryRetriever(memory_store)
+    extractor = MemoryExtractor(provider, model=lambda: cfg.models.model)
+    resolver = MemoryResolver(memory_store)
+
+    chat = ChatService(sessions, provider, model=lambda: cfg.models.model,
+                       system_prompt=persona.active,
+                       retriever=retriever, extractor=extractor,
+                       resolver=resolver)
 
     tool_registry = ToolRegistry()
     for tool in (FilesTool(), AppsTool(), ShellTool(), BrowserTool(),
@@ -74,7 +91,23 @@ def main() -> None:
             stop=lambda: window._stop_flag.is_set())
 
     router = TaskRouter(chat, classifier, make_engine, sessions)
-    window = MainWindow(sessions, chat, cfg, secrets, router)
+    window = MainWindow(sessions, chat, cfg, secrets, router,
+                        persona=persona, memory_store=memory_store)
+
+    tray = TrayIcon(window, policy, cfg, on_quit=lambda: (
+        tray.hide(), app.quit()))
+    window.tray = tray
+    tray.show()
+
+    app.setQuitOnLastWindowClosed(False)
+    if cfg.autostart:
+        from assistant.core.platform import set_autostart
+        set_autostart(True)   # 应用内幂等刷新
+
+    hotkey = HotkeyManager(cfg.hotkey, on_activate=lambda: (
+        window.show() if window.isHidden() else window.hide()))
+    hotkey.start()
+
     window.show()
     sys.exit(app.exec())
 

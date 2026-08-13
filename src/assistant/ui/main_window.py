@@ -27,7 +27,7 @@ class _BusBridge(QObject):
 class MainWindow(QMainWindow):
     def __init__(self, sessions: SessionManager, chat: ChatService,
                  cfg: AppConfig | None, secrets: SecretsStore | None,
-                 router=None):
+                 router=None, persona=None, memory_store=None):
         super().__init__()
         self.setWindowTitle("assistant")
         self.resize(1000, 700)
@@ -36,6 +36,8 @@ class MainWindow(QMainWindow):
         self.cfg = cfg or AppConfig()
         self.secrets = secrets
         self.router = router
+        self.persona = persona
+        self.memory_store = memory_store
         self.current_session_id: str | None = None
         self._stop_flag = threading.Event()
         self.bus = EventBus()
@@ -208,7 +210,18 @@ class MainWindow(QMainWindow):
 
     # --- 设置 ---
     def _open_settings(self):
-        dlg = SettingsDialog(self.cfg, self.secrets, self)
+        dlg = SettingsDialog(self.cfg, self.secrets, self.persona,
+                             self.memory_store, self)
         if dlg.exec():
             self.cfg = dlg.result_config()
             dlg.result_api_key()
+            from assistant.core.platform import set_autostart
+            set_autostart(self.cfg.autostart)
+
+    def closeEvent(self, event):
+        # 关闭 = 隐藏到托盘（由 main.py 注入 tray）
+        if getattr(self, "tray", None) and self.tray.isVisible():
+            event.ignore()
+            self.hide()
+        else:
+            event.accept()
