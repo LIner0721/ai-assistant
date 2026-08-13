@@ -651,7 +651,8 @@ def test_stream_tool_calls_accumulate():
 
     provider = OpenAICompatProvider("https://api.deepseek.com/v1", "sk-test")
     provider._client = httpx.Client(transport=httpx.MockTransport(handler))
-    result = provider.chat([ChatMessage("user", "read a.txt")], model="deepseek-chat")
+    result = provider.chat([ChatMessage("user", "read a.txt")],
+                           model="deepseek-chat", on_delta=lambda t: None)
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].name == "read_file"
     assert result.tool_calls[0].arguments == {"path": "a.txt"}
@@ -1383,7 +1384,7 @@ def test_render_markdown_into_view(qapp):
     view.append_user("hi")
     view.on_delta("你好")
     view.end_stream()
-    assert "你好" in view.toPlainText()
+    assert "你好" in view.browser.toPlainText()
 ```
 
 - [ ] **Step 2: 运行确认失败**

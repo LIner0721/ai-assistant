@@ -15,10 +15,25 @@ class BrowserTool(Tool):
         self._pw = None
         self._browser = None
 
+    _install_attempted = False
+
     def _ensure_browser(self):
         if self._browser is None:
             self._pw = sync_playwright().start()
-            self._browser = self._pw.chromium.launch(headless=True)
+            try:
+                self._browser = self._pw.chromium.launch(headless=True)
+            except Exception as exc:
+                if "Executable doesn't exist" in str(exc) \
+                        and not self._install_attempted:
+                    self._install_attempted = True
+                    import subprocess
+                    import sys
+                    subprocess.run(
+                        [sys.executable, "-m", "playwright", "install",
+                         "chromium"], check=False)
+                    self._browser = self._pw.chromium.launch(headless=True)
+                else:
+                    raise
 
     @property
     def specs(self):

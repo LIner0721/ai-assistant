@@ -190,9 +190,9 @@ class ToolRegistry:
     def list_specs(self) -> list[dict]:
         return [
             {"type": "function",
-             "function": {"name": s.name, "description": s.description,
-                          "parameters": s.parameters}}
-            for _, s in sorted(self._tools.items())
+             "function": {"name": spec.name, "description": spec.description,
+                          "parameters": spec.parameters}}
+            for _, (_tool, spec) in sorted(self._tools.items())
         ]
 ```
 

@@ -76,3 +76,38 @@ def test_specs_low_risk():
     from assistant.tools.browser import BrowserTool
     from assistant.tools.base import RiskLevel
     assert all(s.risk is RiskLevel.LOW for s in BrowserTool().specs)
+
+
+def test_launch_failure_triggers_chromium_install(monkeypatch):
+    import subprocess as sp
+
+    class FakePlaywright:
+        class _PW:
+            class chromium:
+                @staticmethod
+                def launch(headless=True):
+                    raise Exception(
+                        "Executable doesn't exist at ...playwright...")
+
+        @staticmethod
+        def start():
+            return FakePlaywright._PW()
+
+    calls = []
+
+    def fake_install(cmd, **kw):
+        calls.append(cmd)
+        return sp.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr("sys.executable", "/fake/python")
+    monkeypatch.setattr(sp, "run", fake_install)
+    from assistant.tools.browser import BrowserTool
+    tool = BrowserTool()
+    # browser.py 里是 from-import 绑定，必须 patch 它自己的模块属性
+    monkeypatch.setattr("assistant.tools.browser.sync_playwright",
+                        lambda: FakePlaywright())
+    r = tool.execute("fetch_page", {"url": "http://example.com"})
+    assert not r.ok                      # 安装后仍失败（Fake 不提供浏览器）
+    assert calls                            # 已尝试自动下载 chromium
+    assert "playwright" in " ".join(calls[0])
+    assert "chromium" in " ".join(calls[0])

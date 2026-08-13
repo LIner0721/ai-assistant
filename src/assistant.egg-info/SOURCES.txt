@@ -1,0 +1,11 @@
+pyproject.toml
+src/assistant/__init__.py
+src/assistant.egg-info/PKG-INFO
+src/assistant.egg-info/SOURCES.txt
+src/assistant.egg-info/dependency_links.txt
+src/assistant.egg-info/entry_points.txt
+src/assistant.egg-info/requires.txt
+src/assistant.egg-info/top_level.txt
+src/assistant/storage/db.py
+src/assistant/storage/paths.py
+tests/test_db.py
