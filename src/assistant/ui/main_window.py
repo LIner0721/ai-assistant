@@ -81,6 +81,7 @@ class MainWindow(QMainWindow):
         self.input_box.setPlaceholderText("输入消息，Ctrl+Enter 发送")
         self.input_box.setMaximumHeight(120)
         self.send_button = QPushButton("发送")
+        self.send_button.setObjectName("sendButton")
         self.send_button.clicked.connect(self._send)
         self.stop_button = QPushButton("停止")
         self.stop_button.setVisible(False)

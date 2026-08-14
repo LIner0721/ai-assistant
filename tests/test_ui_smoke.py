@@ -103,6 +103,24 @@ def test_chat_view_streams_reasoning_and_tool_calls(qapp):
     assert "hi" in text
 
 
+def test_chat_view_uses_qq_theme_bubbles(qapp):
+    """用户消息右侧蓝色气泡、AI 左侧灰色气泡、思考块灰色小字。"""
+    from assistant.ui.chat_view import ChatView
+    view = ChatView()
+    view.append_user("你好")
+    view.begin_stream()
+    view.on_reasoning("让我想想")
+    view.on_delta("答案是 42")
+    view.end_stream()
+    html = view.browser.toHtml().lower()
+    assert "#12b7f5" in html           # QQ 蓝（用户气泡）
+    assert "#2a2a30" in html           # AI 深灰气泡
+    assert "#1e1e22" in html           # 深色背景
+    assert "🧠" in html
+    text = view.browser.toPlainText()
+    assert "让我想想" in text and "答案是 42" in text
+
+
 def test_settings_dialog_thinking_mode(qapp):
     from assistant.storage.config import AppConfig
     from assistant.ui.settings_dialog import SettingsDialog

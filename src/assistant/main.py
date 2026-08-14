@@ -33,6 +33,7 @@ from assistant.ui.confirm_dialog import ConfirmDialog
 from assistant.ui.hotkey import HotkeyManager
 from assistant.ui.main_window import MainWindow
 from assistant.ui.tray import TrayIcon
+from assistant.ui.theme import apply_theme
 
 
 def _thinking(mode: str) -> str | None:
@@ -57,6 +58,7 @@ def _make_secrets() -> SecretsStore:
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("assistant")
+    apply_theme(app)
 
     cfg = ConfigManager(data_dir() / "config.json").load()
     log = get_logger(data_dir())
