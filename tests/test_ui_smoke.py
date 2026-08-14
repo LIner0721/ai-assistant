@@ -21,7 +21,7 @@ def test_main_window_constructs(qapp):
     db.migrate()
     sessions = SessionManager(db)
     chat = ChatService(sessions, provider=None, model=lambda: "deepseek-chat")
-    win = MainWindow(sessions, chat, None, None, router=None)
+    win = MainWindow(sessions, chat, None, None)
     assert win.windowTitle().startswith("assistant v")
 
 
@@ -35,17 +35,18 @@ def test_status_bar_shows_state_and_context(qapp):
     db.migrate()
     sessions = SessionManager(db)
     chat = ChatService(sessions, provider=None, model=lambda: "deepseek-chat")
-    win = MainWindow(sessions, chat, None, None, router=None)
+    win = MainWindow(sessions, chat, None, None)
     assert win.status_text() == "空闲"
-    assert win.context_text() == "上下文 0/20"
+    assert "上下文" in win.context_text() and "/64K" in win.context_text()
     sid = sessions.create()
     win._reload_sessions()
     win.session_list.select_session(sid)
-    assert win.context_text() == "上下文 0/20"
-    sessions.add_message(sid, "user", "你好")
-    sessions.add_message(sid, "assistant", "你好呀")
+    assert "上下文" in win.context_text()
+    sessions.add_message(sid, "user", "你好" * 50)
+    sessions.add_message(sid, "assistant", "你好呀" * 50)
     win._select_session(sid)   # 回复完成后的刷新路径
-    assert win.context_text() == "上下文 2/20"
+    assert win.context_text().startswith("上下文 ")
+    assert "K/64K" in win.context_text()
     win.set_running("思考中…")
     assert win.status_text() == "思考中…"
 

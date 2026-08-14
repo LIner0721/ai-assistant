@@ -4,14 +4,11 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from assistant import __version__
-from assistant.agent.engine import AgentEngine
 from assistant.agent.recorder import TaskRecorder
 from assistant.agent.safety import Policy
 from assistant.core.chat import ChatService
-from assistant.core.intent import IntentClassifier
 from assistant.core.logs import get_logger, install_excepthook
 from assistant.core.sessions import SessionManager
-from assistant.core.tasks import TaskRouter
 from assistant.memory.extract import MemoryExtractor
 from assistant.memory.persona import PersonaManager
 from assistant.memory.resolve import MemoryResolver
@@ -29,7 +26,6 @@ from assistant.tools.files import FilesTool
 from assistant.tools.registry import ToolRegistry
 from assistant.tools.shell import ShellTool
 from assistant.ui.confirm_bridge import ConfirmBridge
-from assistant.ui.confirm_dialog import ConfirmDialog
 from assistant.ui.hotkey import HotkeyManager
 from assistant.ui.main_window import MainWindow
 from assistant.ui.tray import TrayIcon
@@ -86,34 +82,31 @@ def main() -> None:
     extractor = MemoryExtractor(provider, model=lambda: cfg.models.model)
     resolver = MemoryResolver(memory_store)
 
-    chat = ChatService(sessions, provider, model=lambda: cfg.models.model,
-                       system_prompt=persona.active,
-                       retriever=retriever, extractor=extractor,
-                       resolver=resolver,
-                       thinking=lambda: _thinking(cfg.models.thinking_mode))
-
     tool_registry = ToolRegistry()
     for tool in (FilesTool(), AppsTool(), ShellTool(), BrowserTool(),
                  ComputerTool()):
         tool_registry.register(tool)
 
     policy = Policy(autopilot=cfg.autopilot_default)
-    classifier = IntentClassifier(provider, model=lambda: cfg.models.model)
     recorder = TaskRecorder(db)
     confirm_bridge = ConfirmBridge()
+    window_holder: dict = {}
 
-    # 闭包晚绑定：make_engine 每次任务被调用时 window 已存在
-    def make_engine() -> AgentEngine:
-        return AgentEngine(
-            provider, tool_registry, model=lambda: cfg.models.task_model,
-            policy=policy, recorder=recorder,
-            confirm=confirm_bridge.confirm,
-            stop=lambda: window._stop_flag.is_set(),
-            thinking=lambda: _thinking(cfg.models.thinking_mode))
+    chat = ChatService(
+        sessions, provider, model=lambda: cfg.models.model,
+        system_prompt=persona.active,
+        retriever=retriever, extractor=extractor, resolver=resolver,
+        thinking=lambda: _thinking(cfg.models.thinking_mode),
+        tools=tool_registry, policy=policy,
+        confirm=confirm_bridge.confirm,
+        stop=lambda: (window_holder.get("window") is not None
+                      and window_holder["window"]._stop_flag.is_set()),
+        recorder=recorder,
+        context_limit=lambda: cfg.context_limit_tokens)
 
-    router = TaskRouter(chat, classifier, make_engine, sessions)
-    window = MainWindow(sessions, chat, cfg, secrets, router,
+    window = MainWindow(sessions, chat, cfg, secrets,
                         persona=persona, memory_store=memory_store)
+    window_holder["window"] = window
     confirm_bridge.window = window
 
     tray = TrayIcon(window, policy, cfg, on_quit=lambda: (

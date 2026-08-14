@@ -33,19 +33,18 @@ log = logging.getLogger("assistant.ui")
 class MainWindow(QMainWindow):
     def __init__(self, sessions: SessionManager, chat: ChatService,
                  cfg: AppConfig | None, secrets: SecretsStore | None,
-                 router=None, persona=None, memory_store=None):
+                 persona=None, memory_store=None):
         super().__init__()
         self.setWindowTitle(f"assistant v{__version__}")
         self.resize(1000, 700)
         self._status_label = QLabel("空闲")
-        self._context_label = QLabel("上下文 0/20")
+        self._context_label = QLabel("上下文 0.0K/64K")
         self.statusBar().addPermanentWidget(self._status_label)
         self.statusBar().addPermanentWidget(self._context_label)
         self.sessions = sessions
         self.chat = chat
         self.cfg = cfg or AppConfig()
         self.secrets = secrets
-        self.router = router
         self.persona = persona
         self.memory_store = memory_store
         self.current_session_id: str | None = None
@@ -117,10 +116,15 @@ class MainWindow(QMainWindow):
 
     def _update_context(self, session_id: str | None) -> None:
         if not session_id:
-            self._context_label.setText("上下文 0/20")
+            self._context_label.setText("上下文 0.0K/64K")
             return
-        count = len(self.sessions.history(session_id))
-        self._context_label.setText(f"上下文 {count}/20")
+        from assistant.core.tokens import estimate_tokens
+        total = sum(estimate_tokens(m.content)
+                    for m in self.sessions.history(session_id))
+        limit_k = ((self.cfg.context_limit_tokens // 1024)
+                   if self.cfg else 64)
+        self._context_label.setText(
+            f"上下文 {total / 1024:.1f}K/{limit_k}K")
 
     # --- 会话管理 ---
     def _reload_sessions(self, query: str = ""):
@@ -158,13 +162,10 @@ class MainWindow(QMainWindow):
     def _search(self, query: str):
         self._reload_sessions(query)
 
-    # --- 发送（双线路由） ---
+    # --- 发送(统一 agent 循环) ---
     def _send(self):
         if not self.current_session_id:
             self._create_session()
-        if not self.router:
-            self._send_chat_only()
-            return
         text = self.input_box.toPlainText().strip()
         if not text:
             return
@@ -179,7 +180,7 @@ class MainWindow(QMainWindow):
 
         def worker():
             try:
-                result = self.router.route(
+                reply = self.chat.stream_reply(
                     session_id, text,
                     on_delta=lambda t: self.bus.publish(
                         "chat.delta", session_id=session_id, text=t),
@@ -187,37 +188,8 @@ class MainWindow(QMainWindow):
                         "chat.reasoning", session_id=session_id, text=t),
                     on_event=lambda ev: self.bus.publish(
                         "task.event", session_id=session_id, event=ev))
-                reply = result.summary if hasattr(result, "summary") else result
                 self.bus.publish("chat.done", session_id=session_id,
                                  reply=reply)
-            except Exception as exc:
-                log.exception("发送失败 session=%s", session_id)
-                self.bus.publish("chat.error", session_id=session_id,
-                                 message=str(exc))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _send_chat_only(self):
-        """无路由时的降级路径（测试/占位）。"""
-        text = self.input_box.toPlainText().strip()
-        if not text:
-            return
-        self.input_box.clear()
-        self.chat_view.append_user(text)
-        self.chat_view.begin_stream()
-        session_id = self.current_session_id
-        self.send_button.setEnabled(False)
-        self.set_running("运行中…")
-
-        def worker():
-            try:
-                reply = self.chat.stream_reply(
-                    session_id, text,
-                    on_delta=lambda t: self.bus.publish(
-                        "chat.delta", session_id=session_id, text=t),
-                    on_reasoning=lambda t: self.bus.publish(
-                        "chat.reasoning", session_id=session_id, text=t))
-                self.bus.publish("chat.done", session_id=session_id, reply=reply)
             except Exception as exc:
                 log.exception("发送失败 session=%s", session_id)
                 self.bus.publish("chat.error", session_id=session_id,
