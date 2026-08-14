@@ -1,3 +1,4 @@
+import logging
 import threading
 
 from PySide6.QtCore import QObject, Signal
@@ -24,6 +25,9 @@ class _BusBridge(QObject):
     chat_done = Signal(str, str)       # session_id, full_reply
     chat_error = Signal(str, str)      # session_id, message
     task_event = Signal(str, object)   # session_id, AgentEvent
+
+
+log = logging.getLogger("assistant.ui")
 
 
 class MainWindow(QMainWindow):
@@ -186,6 +190,7 @@ class MainWindow(QMainWindow):
                 self.bus.publish("chat.done", session_id=session_id,
                                  reply=reply)
             except Exception as exc:
+                log.exception("发送失败 session=%s", session_id)
                 self.bus.publish("chat.error", session_id=session_id,
                                  message=str(exc))
 
@@ -213,6 +218,7 @@ class MainWindow(QMainWindow):
                         "chat.reasoning", session_id=session_id, text=t))
                 self.bus.publish("chat.done", session_id=session_id, reply=reply)
             except Exception as exc:
+                log.exception("发送失败 session=%s", session_id)
                 self.bus.publish("chat.error", session_id=session_id,
                                  message=str(exc))
 

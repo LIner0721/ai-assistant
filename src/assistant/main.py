@@ -9,7 +9,7 @@ from assistant.agent.recorder import TaskRecorder
 from assistant.agent.safety import Policy
 from assistant.core.chat import ChatService
 from assistant.core.intent import IntentClassifier
-from assistant.core.logs import get_logger
+from assistant.core.logs import get_logger, install_excepthook
 from assistant.core.sessions import SessionManager
 from assistant.core.tasks import TaskRouter
 from assistant.memory.extract import MemoryExtractor
@@ -28,6 +28,7 @@ from assistant.tools.computer import ComputerTool
 from assistant.tools.files import FilesTool
 from assistant.tools.registry import ToolRegistry
 from assistant.tools.shell import ShellTool
+from assistant.ui.confirm_bridge import ConfirmBridge
 from assistant.ui.confirm_dialog import ConfirmDialog
 from assistant.ui.hotkey import HotkeyManager
 from assistant.ui.main_window import MainWindow
@@ -59,6 +60,7 @@ def main() -> None:
 
     cfg = ConfigManager(data_dir() / "config.json").load()
     log = get_logger(data_dir())
+    install_excepthook(log)
     log.info("启动 assistant v%s", __version__)
     log.info("config provider=%s base_url=%s model=%s task_model=%s "
              "thinking_mode=%s autopilot=%s",
@@ -96,19 +98,21 @@ def main() -> None:
     policy = Policy(autopilot=cfg.autopilot_default)
     classifier = IntentClassifier(provider, model=lambda: cfg.models.model)
     recorder = TaskRecorder(db)
+    confirm_bridge = ConfirmBridge()
 
     # 闭包晚绑定：make_engine 每次任务被调用时 window 已存在
     def make_engine() -> AgentEngine:
         return AgentEngine(
             provider, tool_registry, model=lambda: cfg.models.task_model,
             policy=policy, recorder=recorder,
-            confirm=lambda req: ConfirmDialog(req, window).exec() == 1,
+            confirm=confirm_bridge.confirm,
             stop=lambda: window._stop_flag.is_set(),
             thinking=lambda: _thinking(cfg.models.thinking_mode))
 
     router = TaskRouter(chat, classifier, make_engine, sessions)
     window = MainWindow(sessions, chat, cfg, secrets, router,
                         persona=persona, memory_store=memory_store)
+    confirm_bridge.window = window
 
     tray = TrayIcon(window, policy, cfg, on_quit=lambda: (
         tray.hide(), app.quit()))
