@@ -33,11 +33,23 @@ class SessionListWidget(QWidget):
         layout.addWidget(self.new_button)
 
     def reload(self, sessions: list[Session]) -> None:
-        self.list_widget.clear()
-        for s in sessions:
-            item = QListWidgetItem(s.title)
-            item.setData(Qt.UserRole, s.id)
-            self.list_widget.addItem(item)
+        # 重填期间屏蔽信号：Qt 会把 currentItem 恢复到原行号，
+        # 而行序变了，会误触发会话切换（回复完退回上个对话的根因）。
+        current_id = None
+        cur = self.list_widget.currentItem()
+        if cur is not None:
+            current_id = cur.data(Qt.UserRole)
+        self.list_widget.blockSignals(True)
+        try:
+            self.list_widget.clear()
+            for s in sessions:
+                item = QListWidgetItem(s.title)
+                item.setData(Qt.UserRole, s.id)
+                self.list_widget.addItem(item)
+                if s.id == current_id:
+                    self.list_widget.setCurrentItem(item)
+        finally:
+            self.list_widget.blockSignals(False)
 
     def select_session(self, session_id: str) -> None:
         for i in range(self.list_widget.count()):

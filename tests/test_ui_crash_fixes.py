@@ -40,21 +40,36 @@ def test_confirm_bridge_runs_dialog_on_main_thread(qapp):
 
 
 def test_session_list_reload_does_not_emit_selection(qapp):
-    """刷新会话列表不应触发会话切换（退回 bug 根因）。"""
+    """刷新会话列表不应触发会话切换（退回 bug 根因：reload 重填时
+    Qt 会把 currentItem 恢复到原行号，而行序变了，导致选中另一个会话）。"""
     from assistant.core.sessions import Session
     from assistant.ui.session_list import SessionListWidget
 
     widget = SessionListWidget()
+    widget.resize(220, 400)
+    widget.show()                      # 真实显示状态才能复现
+    qapp.processEvents()
     seen = []
     widget.session_selected.connect(seen.append)
-    s1 = Session(id="a", title="会话A", created_at="", updated_at="")
-    s2 = Session(id="b", title="会话B", created_at="", updated_at="")
-    widget.reload([s1, s2])
-    assert seen == []                       # reload 不得发选中信号
-    widget.select_session("b")
-    assert seen == ["b"]                    # 主动选中才发信号
+    s1 = Session(id="old", title="旧会话", created_at="", updated_at="1")
+    s2 = Session(id="cur", title="当前会话", created_at="", updated_at="2")
     widget.reload([s2, s1])
-    assert seen == ["b"]                    # 再次 reload 仍不发信号
+    qapp.processEvents()
+    assert seen == []                  # 首次填充不自动选中
+    widget.select_session("cur")
+    qapp.processEvents()
+    assert seen == ["cur"]
+    # 回复完成后刷新：顺序不变，但 reload 不得发任何信号
+    widget.reload([s2, s1])
+    qapp.processEvents()
+    assert seen == ["cur"]
+    # 当前会话跳到顶部后刷新（真实排序场景）
+    widget.reload([s2, s1])
+    qapp.processEvents()
+    assert seen == ["cur"]
+    # 当前选中项高亮应保持在同一个会话上
+    cur = widget.list_widget.currentItem()
+    assert cur is not None and cur.data(0x0100) == "cur"
 
 
 def test_excepthook_logs_crash_traceback(tmp_path):
