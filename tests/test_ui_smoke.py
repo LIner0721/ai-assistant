@@ -22,7 +22,32 @@ def test_main_window_constructs(qapp):
     sessions = SessionManager(db)
     chat = ChatService(sessions, provider=None, model=lambda: "deepseek-chat")
     win = MainWindow(sessions, chat, None, None, router=None)
-    assert win.windowTitle() == "assistant"
+    assert win.windowTitle().startswith("assistant v")
+
+
+def test_status_bar_shows_state_and_context(qapp):
+    from assistant.core.chat import ChatService
+    from assistant.core.sessions import SessionManager
+    from assistant.storage.db import Database
+    from assistant.ui.main_window import MainWindow
+
+    db = Database(":memory:")
+    db.migrate()
+    sessions = SessionManager(db)
+    chat = ChatService(sessions, provider=None, model=lambda: "deepseek-chat")
+    win = MainWindow(sessions, chat, None, None, router=None)
+    assert win.status_text() == "空闲"
+    assert win.context_text() == "上下文 0/20"
+    sid = sessions.create()
+    win._reload_sessions()
+    win.session_list.select_session(sid)
+    assert win.context_text() == "上下文 0/20"
+    sessions.add_message(sid, "user", "你好")
+    sessions.add_message(sid, "assistant", "你好呀")
+    win._select_session(sid)   # 回复完成后的刷新路径
+    assert win.context_text() == "上下文 2/20"
+    win.set_running("思考中…")
+    assert win.status_text() == "思考中…"
 
 
 def test_render_markdown_into_view(qapp):

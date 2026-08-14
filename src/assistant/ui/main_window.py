@@ -2,10 +2,11 @@ import threading
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QMainWindow, QMessageBox, QPushButton, QSplitter,
+    QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QSplitter,
     QTextEdit, QVBoxLayout, QWidget,
 )
 
+from assistant import __version__
 from assistant.core.chat import ChatService
 from assistant.core.eventbus import EventBus
 from assistant.core.sessions import SessionManager
@@ -30,8 +31,12 @@ class MainWindow(QMainWindow):
                  cfg: AppConfig | None, secrets: SecretsStore | None,
                  router=None, persona=None, memory_store=None):
         super().__init__()
-        self.setWindowTitle("assistant")
+        self.setWindowTitle(f"assistant v{__version__}")
         self.resize(1000, 700)
+        self._status_label = QLabel("空闲")
+        self._context_label = QLabel("上下文 0/20")
+        self.statusBar().addPermanentWidget(self._status_label)
+        self.statusBar().addPermanentWidget(self._context_label)
         self.sessions = sessions
         self.chat = chat
         self.cfg = cfg or AppConfig()
@@ -95,6 +100,23 @@ class MainWindow(QMainWindow):
         settings_action = self.menuBar().addAction("设置")
         settings_action.triggered.connect(self._open_settings)
 
+    # --- 状态栏 ---
+    def status_text(self) -> str:
+        return self._status_label.text()
+
+    def context_text(self) -> str:
+        return self._context_label.text()
+
+    def set_running(self, text: str) -> None:
+        self._status_label.setText(text)
+
+    def _update_context(self, session_id: str | None) -> None:
+        if not session_id:
+            self._context_label.setText("上下文 0/20")
+            return
+        count = len(self.sessions.history(session_id))
+        self._context_label.setText(f"上下文 {count}/20")
+
     # --- 会话管理 ---
     def _reload_sessions(self, query: str = ""):
         sessions = self.sessions.search(query) if query else self.sessions.list()
@@ -110,12 +132,12 @@ class MainWindow(QMainWindow):
                 self.chat_view.begin_stream()
                 self.chat_view.on_delta(msg.content)
                 self.chat_view.end_stream()
+        self._update_context(session_id)
 
     def _create_session(self):
         sid = self.sessions.create()
         self._reload_sessions()
-        self.session_list.select_session(sid)
-        self._select_session(sid)
+        self.session_list.select_session(sid)   # 信号会自动触发 _select_session
 
     def _rename_session(self, session_id: str, title: str):
         self.sessions.rename(session_id, title)
@@ -147,6 +169,7 @@ class MainWindow(QMainWindow):
         session_id = self.current_session_id
         self.send_button.setEnabled(False)
         self.stop_button.setVisible(True)
+        self.set_running("运行中…")
         self._stop_flag.clear()
 
         def worker():
@@ -178,6 +201,7 @@ class MainWindow(QMainWindow):
         self.chat_view.begin_stream()
         session_id = self.current_session_id
         self.send_button.setEnabled(False)
+        self.set_running("运行中…")
 
         def worker():
             try:
@@ -214,11 +238,14 @@ class MainWindow(QMainWindow):
             self.chat_view.end_stream()
         self.send_button.setEnabled(True)
         self.stop_button.setVisible(False)
+        self.set_running("空闲")
+        self._update_context(session_id)
         self._reload_sessions()
 
     def _on_error(self, session_id: str, message: str):
         self.send_button.setEnabled(True)
         self.stop_button.setVisible(False)
+        self.set_running("空闲")
         QMessageBox.warning(self, "出错了", message)
 
     # --- 设置 ---

@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Callable
@@ -7,6 +8,8 @@ from assistant.agent.recorder import TaskRecorder
 from assistant.agent.safety import ConfirmCallback, ConfirmationRequest, Policy
 from assistant.providers.base import ChatMessage, Provider
 from assistant.tools.registry import ToolRegistry
+
+log = logging.getLogger("assistant.agent")
 
 EXECUTOR_SYSTEM = (
     "你是 assistant 的任务执行引擎。用提供的工具完成用户的目标。\n"
@@ -68,6 +71,7 @@ class AgentEngine:
         self.on_event(AgentEvent(etype, payload))
 
     def run_task(self, goal: str, session_id: str | None = None) -> TaskReport:
+        log.info("task start session=%s goal=%r", session_id, goal[:120])
         task_id = uuid.uuid4().hex
         messages = [ChatMessage("system", EXECUTOR_SYSTEM),
                     ChatMessage("user", goal)]
@@ -145,6 +149,8 @@ class AgentEngine:
                                              "status": "declined"}))
                             continue
                     result = tool.execute(tc.name, tc.arguments)
+                    log.info("tool %s ok=%s output=%r", tc.name, result.ok,
+                             result.output[:200])
                     result_text = json.dumps(
                         {"ok": result.ok, "output": result.output},
                         ensure_ascii=False)
@@ -181,6 +187,8 @@ class AgentEngine:
             False, "达到最大执行步数，任务中止。")
 
     def _finish(self, success, summary):
+        log.info("task finish success=%s summary=%r", success,
+                 summary[:200])
         self.on_event(AgentEvent("failed", {"summary": summary}))
         return TaskReport(success=success, summary=summary)
 

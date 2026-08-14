@@ -20,8 +20,9 @@ class SessionListWidget(QWidget):
         self.search_box.setPlaceholderText("搜索会话…")
         self.search_box.textChanged.connect(self.search_changed.emit)
         self.list_widget = QListWidget()
-        self.list_widget.itemClicked.connect(
-            lambda item: self.session_selected.emit(item.data(Qt.UserRole)))
+        self.list_widget.currentItemChanged.connect(
+            lambda cur, prev: cur and self.session_selected.emit(
+                cur.data(Qt.UserRole)))
         self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._menu)
         self.new_button = QPushButton("＋ 新会话")

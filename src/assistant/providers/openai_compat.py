@@ -1,10 +1,14 @@
 import json
+import logging
+import time
 
 import httpx
 
 from assistant.providers.base import (
     ChatMessage, Completion, Provider, ToolCall, ToolCallDelta,
 )
+
+log = logging.getLogger("assistant.provider")
 
 
 class OpenAICompatProvider(Provider):
@@ -17,6 +21,7 @@ class OpenAICompatProvider(Provider):
 
     def chat(self, messages, model, tools=None, on_delta=None,
              on_reasoning=None, on_tool_delta=None, thinking=None) -> Completion:
+        t0 = time.time()
         payload = {
             "model": model,
             "messages": [m.to_openai() for m in messages],
@@ -27,6 +32,9 @@ class OpenAICompatProvider(Provider):
             payload["thinking"] = {"type": thinking}
         if on_delta is not None:
             payload["stream"] = True
+        log.info("request model=%s stream=%s thinking=%s tools=%d msgs=%d",
+                 model, on_delta is not None, thinking,
+                 len(tools or []), len(messages))
         response = self._client.post(
             f"{self.base_url}/chat/completions",
             json=payload,
@@ -34,9 +42,15 @@ class OpenAICompatProvider(Provider):
         )
         response.raise_for_status()
         if on_delta is not None:
-            return self._parse_stream(response, on_delta,
-                                      on_reasoning, on_tool_delta)
-        return self._parse_once(response)
+            completion = self._parse_stream(response, on_delta,
+                                            on_reasoning, on_tool_delta)
+        else:
+            completion = self._parse_once(response)
+        log.info("done model=%s elapsed=%.2fs content=%d reasoning=%d "
+                 "tool_calls=%d",
+                 model, time.time() - t0, len(completion.content),
+                 len(completion.reasoning), len(completion.tool_calls))
+        return completion
 
     def _parse_once(self, response: httpx.Response) -> Completion:
         data = response.json()
@@ -55,6 +69,7 @@ class OpenAICompatProvider(Provider):
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         tool_buf: dict[int, dict] = {}
+        chunks = 0
         for line in response.iter_lines():
             if not line.startswith("data:"):
                 continue
@@ -62,6 +77,7 @@ class OpenAICompatProvider(Provider):
             if data == "[DONE]":
                 break
             chunk = json.loads(data)
+            chunks += 1
             delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
             if delta.get("content"):
                 content_parts.append(delta["content"])
@@ -91,5 +107,7 @@ class OpenAICompatProvider(Provider):
                      arguments=json.loads(b["arguments"] or "{}"))
             for _, b in sorted(tool_buf.items())
         ]
+        log.info("stream chunks=%d content_chunks=%d reasoning_chunks=%d",
+                 chunks, len(content_parts), len(reasoning_parts))
         return Completion(content="".join(content_parts), tool_calls=tool_calls,
                           reasoning="".join(reasoning_parts))

@@ -3,11 +3,13 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
+from assistant import __version__
 from assistant.agent.engine import AgentEngine
 from assistant.agent.recorder import TaskRecorder
 from assistant.agent.safety import Policy
 from assistant.core.chat import ChatService
 from assistant.core.intent import IntentClassifier
+from assistant.core.logs import get_logger
 from assistant.core.sessions import SessionManager
 from assistant.core.tasks import TaskRouter
 from assistant.memory.extract import MemoryExtractor
@@ -56,6 +58,13 @@ def main() -> None:
     app.setApplicationName("assistant")
 
     cfg = ConfigManager(data_dir() / "config.json").load()
+    log = get_logger(data_dir())
+    log.info("启动 assistant v%s", __version__)
+    log.info("config provider=%s base_url=%s model=%s task_model=%s "
+             "thinking_mode=%s autopilot=%s",
+             cfg.models.provider, cfg.models.base_url, cfg.models.model,
+             cfg.models.task_model, cfg.models.thinking_mode,
+             cfg.autopilot_default)
     db = Database(data_dir() / "assistant.db")
     db.migrate()
     secrets = _make_secrets()
