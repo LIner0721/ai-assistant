@@ -60,7 +60,7 @@ def test_render_markdown_into_view(qapp):
 
 
 def test_chat_view_task_events(qapp):
-    from assistant.agent.engine import AgentEvent
+    from assistant.core.events import AgentEvent
     from assistant.ui.chat_view import ChatView
     view = ChatView()
     view.on_task_event(AgentEvent("text", {"text": "计划内容"}))
@@ -77,7 +77,7 @@ def test_chat_view_task_events(qapp):
 
 
 def test_chat_view_streams_reasoning_and_tool_calls(qapp):
-    from assistant.agent.engine import AgentEvent
+    from assistant.core.events import AgentEvent
     from assistant.ui.chat_view import ChatView
     view = ChatView()
     view.begin_stream()
