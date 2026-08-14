@@ -3,7 +3,7 @@ import json
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox,
-    QPlainTextEdit, QPushButton, QTabWidget, QVBoxLayout, QWidget,
+    QPlainTextEdit, QPushButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from assistant.storage.config import AppConfig
@@ -51,6 +51,10 @@ class SettingsDialog(QDialog):
         self.thinking_mode.addItem("关闭", "disabled")
         self.thinking_mode.setCurrentIndex(
             self.thinking_mode.findData(self._cfg.models.thinking_mode))
+        self.context_limit = QSpinBox()
+        self.context_limit.setRange(8, 512)
+        self.context_limit.setSuffix(" K")
+        self.context_limit.setValue(self._cfg.context_limit_tokens // 1024)
         self.autopilot = QCheckBox("默认开启自动驾驶")
         self.autopilot.setChecked(self._cfg.autopilot_default)
         self.autostart_check = QCheckBox("开机自启")
@@ -60,6 +64,7 @@ class SettingsDialog(QDialog):
         form.addRow("聊天模型", self.model)
         form.addRow("任务模型", self.task_model)
         form.addRow("思考模式", self.thinking_mode)
+        form.addRow("上下文上限", self.context_limit)
         form.addRow("", self.autopilot)
         form.addRow("", self.autostart_check)
         return w
@@ -139,6 +144,7 @@ class SettingsDialog(QDialog):
         self._cfg.models.model = self.model.text().strip() or "deepseek-chat"
         self._cfg.models.task_model = self.task_model.text().strip() or "deepseek-chat"
         self._cfg.models.thinking_mode = self.thinking_mode.currentData() or "auto"
+        self._cfg.context_limit_tokens = self.context_limit.value() * 1024
         self._cfg.autopilot_default = self.autopilot.isChecked()
         self._cfg.autostart = self.autostart_check.isChecked()
         return self._cfg

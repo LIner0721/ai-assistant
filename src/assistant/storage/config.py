@@ -18,6 +18,7 @@ class AppConfig:
     hotkey: str = "<ctrl>+<alt>+<space>"
     autopilot_default: bool = False
     autostart: bool = False
+    context_limit_tokens: int = 65536
 
 
 def _fill(dc, data: dict):

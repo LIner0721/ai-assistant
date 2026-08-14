@@ -128,5 +128,7 @@ def test_settings_dialog_thinking_mode(qapp):
     combo = dlg.thinking_mode
     assert combo.currentData() == "auto"
     combo.setCurrentIndex(combo.findData("enabled"))
+    dlg.context_limit.setValue(128)
     cfg = dlg.result_config()
     assert cfg.models.thinking_mode == "enabled"
+    assert cfg.context_limit_tokens == 128 * 1024

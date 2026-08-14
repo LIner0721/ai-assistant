@@ -32,6 +32,15 @@ def test_load_partial_json_fills_defaults(tmp_path):
     assert cfg.models.model == "deepseek-chat"
 
 
+def test_context_limit_default_and_roundtrip(tmp_path):
+    cm = ConfigManager(tmp_path / "config.json")
+    cfg = cm.load()
+    assert cfg.context_limit_tokens == 65536
+    cfg.context_limit_tokens = 131072
+    cm.save(cfg)
+    assert cm.load().context_limit_tokens == 131072
+
+
 def test_load_corrupt_json_returns_defaults(tmp_path):
     p = tmp_path / "config.json"
     p.write_text("not json{{", encoding="utf-8")
