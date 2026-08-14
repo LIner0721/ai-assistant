@@ -17,7 +17,8 @@ class ScriptedProvider:
         self.calls = 0
         self.first_prompt = None
 
-    def chat(self, messages, model, tools=None, on_delta=None):
+    def chat(self, messages, model, tools=None, on_delta=None,
+             on_reasoning=None, on_tool_delta=None, thinking=None):
         self.calls += 1
         if self.calls == 1:
             self.first_prompt = messages[0].content
@@ -72,7 +73,8 @@ def test_extraction_error_does_not_break_chat():
         def __init__(self):
             self.calls = 0
 
-        def chat(self, messages, model, tools=None, on_delta=None):
+        def chat(self, messages, model, tools=None, on_delta=None,
+                 on_reasoning=None, on_tool_delta=None, thinking=None):
             self.calls += 1
             if self.calls == 1:
                 if on_delta:

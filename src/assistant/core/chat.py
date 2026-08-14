@@ -29,6 +29,7 @@ class ChatService:
         retriever=None,      # MemoryRetriever | None
         extractor=None,      # MemoryExtractor | None
         resolver=None,       # MemoryResolver | None
+        thinking: Callable[[], str | None] | None = None,
     ):
         self.sessions = sessions
         self.provider = provider
@@ -37,6 +38,7 @@ class ChatService:
         self.retriever = retriever
         self.extractor = extractor
         self.resolver = resolver
+        self.thinking = thinking
 
     def _build_system(self, user_text: str) -> str:
         base = self.system_prompt()
@@ -53,13 +55,16 @@ class ChatService:
         session_id: str,
         user_text: str,
         on_delta: Callable[[str], None],
+        on_reasoning: Callable[[str], None] | None = None,
     ) -> str:
         self.sessions.add_message(session_id, "user", user_text)
         history = self.sessions.history(session_id)
         messages = [ChatMessage("system", self._build_system(user_text))]
         messages += history[-self.history_limit:]
+        thinking = self.thinking() if self.thinking else None
         completion = self.provider.chat(
-            messages, model=self.model(), on_delta=on_delta)
+            messages, model=self.model(), on_delta=on_delta,
+            on_reasoning=on_reasoning, thinking=thinking)
         reply = completion.content
         if reply:
             self.sessions.add_message(session_id, "assistant", reply)

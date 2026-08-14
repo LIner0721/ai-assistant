@@ -38,7 +38,7 @@ def test_chat_view_task_events(qapp):
     from assistant.agent.engine import AgentEvent
     from assistant.ui.chat_view import ChatView
     view = ChatView()
-    view.on_task_event(AgentEvent("plan", {"plan": "计划内容"}))
+    view.on_task_event(AgentEvent("text", {"text": "计划内容"}))
     view.on_task_event(AgentEvent("step_start",
                                   {"step": 1, "tool": "echo"}))
     view.on_task_event(AgentEvent("step_end",
@@ -49,3 +49,41 @@ def test_chat_view_task_events(qapp):
     assert "计划内容" in text
     assert "echo" in text
     assert "完成" in text
+
+
+def test_chat_view_streams_reasoning_and_tool_calls(qapp):
+    from assistant.agent.engine import AgentEvent
+    from assistant.ui.chat_view import ChatView
+    view = ChatView()
+    view.begin_stream()
+    view.on_reasoning("让我")
+    view.on_reasoning("想想")
+    view.on_delta("答案是 42")
+    view.on_task_event(AgentEvent("tool_start",
+                                  {"index": 0, "name": "echo",
+                                   "args": "", "args_delta": ""}))
+    view.on_task_event(AgentEvent("tool_args",
+                                  {"index": 0, "name": "echo",
+                                   "args": "{\"text\":",
+                                   "args_delta": "{\"text\":"}))
+    view.on_task_event(AgentEvent("tool_args",
+                                  {"index": 0, "name": "echo",
+                                   "args": "{\"text\":\"hi\"}",
+                                   "args_delta": "\"hi\"}"}))
+    view.end_stream()
+    text = view.browser.toPlainText()
+    assert "让我想想" in text
+    assert "答案是 42" in text
+    assert "echo" in text
+    assert "hi" in text
+
+
+def test_settings_dialog_thinking_mode(qapp):
+    from assistant.storage.config import AppConfig
+    from assistant.ui.settings_dialog import SettingsDialog
+    dlg = SettingsDialog(AppConfig(), None, parent=None)
+    combo = dlg.thinking_mode
+    assert combo.currentData() == "auto"
+    combo.setCurrentIndex(combo.findData("enabled"))
+    cfg = dlg.result_config()
+    assert cfg.models.thinking_mode == "enabled"

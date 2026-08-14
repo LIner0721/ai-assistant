@@ -1,6 +1,8 @@
 from assistant.agent.engine import AgentEngine, TaskReport
 from assistant.agent.safety import Policy
-from assistant.providers.base import ChatMessage, Completion, ToolCall
+from assistant.providers.base import (
+    ChatMessage, Completion, ToolCall, ToolCallDelta,
+)
 from assistant.tools.base import RiskLevel, Tool, ToolResult, ToolSpec
 from assistant.tools.registry import ToolRegistry
 
@@ -24,7 +26,8 @@ class ScriptedProvider:
         self.calls = 0
         self.messages_log = []
 
-    def chat(self, messages, model, tools=None, on_delta=None):
+    def chat(self, messages, model, tools=None, on_delta=None,
+             on_reasoning=None, on_tool_delta=None, thinking=None):
         self.messages_log.append(list(messages))
         step = self.script[min(self.calls, len(self.script) - 1)]
         self.calls += 1
@@ -34,6 +37,33 @@ class ScriptedProvider:
         return Completion(content=step)
 
 
+class StreamingProvider:
+    """按脚本返回，每个步骤可先触发流式回调再返回完成结果。"""
+
+    def __init__(self, script):
+        self.script = list(script)
+        self.calls = 0
+        self.kwargs = []
+
+    def chat(self, messages, model, tools=None, on_delta=None,
+             on_reasoning=None, on_tool_delta=None, thinking=None):
+        self.kwargs.append({"thinking": thinking})
+        step = self.script[min(self.calls, len(self.script) - 1)]
+        self.calls += 1
+        # ("stream", dict_of_deltas, completion)
+        deltas, completion = step[1], step[2]
+        for r in deltas.get("reasoning", []):
+            if on_reasoning:
+                on_reasoning(r)
+        for t in deltas.get("text", []):
+            if on_delta:
+                on_delta(t)
+        for td in deltas.get("tool_deltas", []):
+            if on_tool_delta:
+                on_tool_delta(td)
+        return completion
+
+
 def make_engine(script, **kw):
     provider = ScriptedProvider(script)
     reg = ToolRegistry()
@@ -41,6 +71,61 @@ def make_engine(script, **kw):
     engine = AgentEngine(provider, reg, model=lambda: "m", policy=Policy(),
                          **kw)
     return provider, reg, engine
+
+
+def test_engine_streams_reasoning_text_and_tool_deltas():
+    events = []
+    provider = StreamingProvider([
+        ("stream",
+         {"reasoning": ["让我", "想想"], "text": ["计划", "：回显"]},
+         Completion(content="计划：回显")),
+        ("stream",
+         {"tool_deltas": [
+             ToolCallDelta(index=0, name="echo",
+                           arguments_delta='{"text":'),
+             ToolCallDelta(index=0, arguments_delta='"hi"}')]},
+         Completion(tool_calls=[ToolCall(id="c", name="echo",
+                                         arguments={"text": "hi"})])),
+        ("stream",
+         {"text": ["完成", "了"]},
+         Completion(content="完成了")),
+    ])
+    reg = ToolRegistry()
+    reg.register(EchoTool())
+    engine = AgentEngine(provider, reg, model=lambda: "m", policy=Policy(),
+                         on_event=lambda e: events.append((e.type, e.payload)))
+    report = engine.run_task("测试任务")
+    assert report.success is True
+    types = [t for t, _ in events]
+    # 思考与文本实时流出
+    assert "".join(p["text"] for t, p in events if t == "reasoning") == "让我想想"
+    text = "".join(p["text"] for t, p in events if t == "text")
+    assert "计划：回显" in text and "完成了" in text
+    # 工具调用增量实时流出，随后才执行
+    assert types.index("tool_start") < types.index("step_start")
+    assert types.index("tool_args") < types.index("step_start")
+    tool_events = [p for t, p in events if t == "tool_start"]
+    assert tool_events[0]["name"] == "echo"
+    args_events = [p for t, p in events if t == "tool_args"]
+    assert args_events[-1]["args"] == '{"text":"hi"}'
+    assert args_events[0]["args_delta"] == '"hi"}'
+    assert types[-1] == "done"
+
+
+def test_engine_passes_thinking_to_provider():
+    script = [("stream", {"text": ["完成"]}, Completion(content="完成"))]
+    provider = StreamingProvider(script)
+    reg = ToolRegistry()
+    reg.register(EchoTool())
+    engine = AgentEngine(provider, reg, model=lambda: "m", policy=Policy(),
+                         thinking=lambda: "enabled")
+    engine.run_task("测试")
+    assert all(k["thinking"] == "enabled" for k in provider.kwargs)
+
+    provider2 = StreamingProvider(script)
+    engine2 = AgentEngine(provider2, reg, model=lambda: "m", policy=Policy())
+    engine2.run_task("测试")
+    assert all(k["thinking"] is None for k in provider2.kwargs)
 
 
 def test_simple_task_plan_tool_summary():

@@ -19,6 +19,7 @@ from assistant.ui.settings_dialog import SettingsDialog
 class _BusBridge(QObject):
     """把 EventBus 回调桥接到 Qt 主线程信号。"""
     chat_delta = Signal(str, str)      # session_id, text
+    chat_reasoning = Signal(str, str)  # session_id, reasoning_text
     chat_done = Signal(str, str)       # session_id, full_reply
     chat_error = Signal(str, str)      # session_id, message
     task_event = Signal(str, object)   # session_id, AgentEvent
@@ -43,11 +44,15 @@ class MainWindow(QMainWindow):
         self.bus = EventBus()
         self.bridge = _BusBridge()
         self.bridge.chat_delta.connect(self._on_delta)
+        self.bridge.chat_reasoning.connect(self._on_reasoning)
         self.bridge.chat_done.connect(self._on_done)
         self.bridge.chat_error.connect(self._on_error)
         self.bridge.task_event.connect(self._on_task_event)
         self.bus.subscribe("chat.delta", lambda **kw: self.bridge.chat_delta.emit(
             kw["session_id"], kw["text"]))
+        self.bus.subscribe("chat.reasoning",
+                           lambda **kw: self.bridge.chat_reasoning.emit(
+                               kw["session_id"], kw["text"]))
         self.bus.subscribe("chat.done", lambda **kw: self.bridge.chat_done.emit(
             kw["session_id"], kw["reply"]))
         self.bus.subscribe("chat.error", lambda **kw: self.bridge.chat_error.emit(
@@ -150,6 +155,8 @@ class MainWindow(QMainWindow):
                     session_id, text,
                     on_delta=lambda t: self.bus.publish(
                         "chat.delta", session_id=session_id, text=t),
+                    on_reasoning=lambda t: self.bus.publish(
+                        "chat.reasoning", session_id=session_id, text=t),
                     on_event=lambda ev: self.bus.publish(
                         "task.event", session_id=session_id, event=ev))
                 reply = result.summary if hasattr(result, "summary") else result
@@ -177,7 +184,9 @@ class MainWindow(QMainWindow):
                 reply = self.chat.stream_reply(
                     session_id, text,
                     on_delta=lambda t: self.bus.publish(
-                        "chat.delta", session_id=session_id, text=t))
+                        "chat.delta", session_id=session_id, text=t),
+                    on_reasoning=lambda t: self.bus.publish(
+                        "chat.reasoning", session_id=session_id, text=t))
                 self.bus.publish("chat.done", session_id=session_id, reply=reply)
             except Exception as exc:
                 self.bus.publish("chat.error", session_id=session_id,
@@ -191,6 +200,10 @@ class MainWindow(QMainWindow):
     def _on_delta(self, session_id: str, text: str):
         if session_id == self.current_session_id:
             self.chat_view.on_delta(text)
+
+    def _on_reasoning(self, session_id: str, text: str):
+        if session_id == self.current_session_id:
+            self.chat_view.on_reasoning(text)
 
     def _on_task_event(self, session_id, event):
         if session_id == self.current_session_id:

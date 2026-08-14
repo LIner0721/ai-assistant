@@ -49,6 +49,7 @@ class AgentEngine:
         confirm: ConfirmCallback | None = None,
         stop: Callable[[], bool] | None = None,
         recorder: TaskRecorder | None = None,
+        thinking: Callable[[], str | None] | None = None,
     ):
         self.provider = provider
         self.tools = tools
@@ -58,6 +59,13 @@ class AgentEngine:
         self.confirm = confirm or (lambda r: True)
         self.stop = stop or (lambda: False)
         self.recorder = recorder
+        self.thinking = thinking
+
+    def _thinking(self) -> str | None:
+        return self.thinking() if self.thinking else None
+
+    def _emit(self, etype: str, **payload) -> None:
+        self.on_event(AgentEvent(etype, payload))
 
     def run_task(self, goal: str, session_id: str | None = None) -> TaskReport:
         task_id = uuid.uuid4().hex
@@ -66,21 +74,48 @@ class AgentEngine:
         steps: list[dict] = []
         step_no = 0
         consecutive_failures = 0
+        thinking = self._thinking()
 
-        # ① 计划阶段（不带工具）
-        plan = self.provider.chat(messages, model=self.model())
+        # ① 计划阶段（流式：思考与计划文本实时输出）
+        plan = self.provider.chat(
+            messages, model=self.model(), thinking=thinking,
+            on_delta=lambda t: self._emit("text", text=t, phase="plan"),
+            on_reasoning=lambda r: self._emit("reasoning", text=r))
         plan_text = plan.content.strip()
-        self.on_event(AgentEvent("plan", {"goal": goal, "plan": plan_text}))
+        self._emit("plan", goal=goal, plan=plan_text)
         if plan_text:
             messages.append(ChatMessage("assistant", plan_text))
 
-        # ② 执行循环
+        # ② 执行循环（流式：实时看到工具调用生成过程）
         tool_specs = self.tools.list_specs()
         for _ in range(self.MAX_STEPS):
             if self.stop():
                 return self._finish(False, "任务已被用户手动停止。")
+            tool_stream: dict[int, dict] = {}
+            started: set[int] = set()
+
+            def on_tool_delta(td):
+                buf = tool_stream.setdefault(td.index,
+                                             {"name": "", "args": ""})
+                if td.name:
+                    buf["name"] = td.name
+                if td.arguments_delta:
+                    buf["args"] += td.arguments_delta
+                payload = {"index": td.index, "name": buf["name"],
+                           "args": buf["args"],
+                           "args_delta": td.arguments_delta}
+                if td.index in started:
+                    self._emit("tool_args", **payload)
+                else:
+                    started.add(td.index)
+                    self._emit("tool_start", **payload)
+
             completion = self.provider.chat(
-                messages, model=self.model(), tools=tool_specs)
+                messages, model=self.model(), tools=tool_specs,
+                thinking=thinking,
+                on_delta=lambda t: self._emit("text", text=t),
+                on_reasoning=lambda r: self._emit("reasoning", text=r),
+                on_tool_delta=on_tool_delta)
             if completion.tool_calls:
                 step_no += 1
                 record = {"step": step_no, "tool": None, "status": "unknown",

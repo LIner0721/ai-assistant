@@ -6,6 +6,7 @@ def test_load_missing_file_returns_defaults(tmp_path):
     cfg = cm.load()
     assert cfg.models.model == "deepseek-chat"
     assert cfg.models.base_url == "https://api.deepseek.com/v1"
+    assert cfg.models.thinking_mode == "auto"
     assert cfg.hotkey == "<ctrl>+<alt>+<space>"
     assert cfg.autopilot_default is False
 
@@ -14,10 +15,12 @@ def test_save_and_load_roundtrip(tmp_path):
     cm = ConfigManager(tmp_path / "config.json")
     cfg = AppConfig()
     cfg.models.model = "qwen-plus"
+    cfg.models.thinking_mode = "enabled"
     cfg.autopilot_default = True
     cm.save(cfg)
     loaded = cm.load()
     assert loaded.models.model == "qwen-plus"
+    assert loaded.models.thinking_mode == "enabled"
     assert loaded.autopilot_default is True
 
 

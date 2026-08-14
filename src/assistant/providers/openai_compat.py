@@ -2,7 +2,9 @@ import json
 
 import httpx
 
-from assistant.providers.base import ChatMessage, Completion, Provider, ToolCall
+from assistant.providers.base import (
+    ChatMessage, Completion, Provider, ToolCall, ToolCallDelta,
+)
 
 
 class OpenAICompatProvider(Provider):
@@ -13,13 +15,16 @@ class OpenAICompatProvider(Provider):
         self._api_key = api_key
         self._client = httpx.Client(timeout=httpx.Timeout(120.0, connect=15.0))
 
-    def chat(self, messages, model, tools=None, on_delta=None) -> Completion:
+    def chat(self, messages, model, tools=None, on_delta=None,
+             on_reasoning=None, on_tool_delta=None, thinking=None) -> Completion:
         payload = {
             "model": model,
             "messages": [m.to_openai() for m in messages],
         }
         if tools:
             payload["tools"] = tools
+        if thinking:
+            payload["thinking"] = {"type": thinking}
         if on_delta is not None:
             payload["stream"] = True
         response = self._client.post(
@@ -29,7 +34,8 @@ class OpenAICompatProvider(Provider):
         )
         response.raise_for_status()
         if on_delta is not None:
-            return self._parse_stream(response, on_delta)
+            return self._parse_stream(response, on_delta,
+                                      on_reasoning, on_tool_delta)
         return self._parse_once(response)
 
     def _parse_once(self, response: httpx.Response) -> Completion:
@@ -41,10 +47,13 @@ class OpenAICompatProvider(Provider):
             for t in (message.get("tool_calls") or [])
         ]
         return Completion(content=message.get("content") or "",
-                          tool_calls=tool_calls)
+                          tool_calls=tool_calls,
+                          reasoning=message.get("reasoning_content") or "")
 
-    def _parse_stream(self, response: httpx.Response, on_delta) -> Completion:
+    def _parse_stream(self, response: httpx.Response, on_delta,
+                      on_reasoning, on_tool_delta) -> Completion:
         content_parts: list[str] = []
+        reasoning_parts: list[str] = []
         tool_buf: dict[int, dict] = {}
         for line in response.iter_lines():
             if not line.startswith("data:"):
@@ -57,8 +66,13 @@ class OpenAICompatProvider(Provider):
             if delta.get("content"):
                 content_parts.append(delta["content"])
                 on_delta(delta["content"])
+            if delta.get("reasoning_content"):
+                reasoning_parts.append(delta["reasoning_content"])
+                if on_reasoning:
+                    on_reasoning(delta["reasoning_content"])
             for tc in delta.get("tool_calls") or []:
-                buf = tool_buf.setdefault(tc["index"], {
+                idx = tc.get("index", 0)
+                buf = tool_buf.setdefault(idx, {
                     "id": "", "name": "", "arguments": ""})
                 if tc.get("id"):
                     buf["id"] = tc["id"]
@@ -67,9 +81,15 @@ class OpenAICompatProvider(Provider):
                     buf["name"] = fn["name"]
                 if fn.get("arguments"):
                     buf["arguments"] += fn["arguments"]
+                if on_tool_delta:
+                    on_tool_delta(ToolCallDelta(
+                        index=idx, id=tc.get("id", ""),
+                        name=fn.get("name", ""),
+                        arguments_delta=fn.get("arguments", "")))
         tool_calls = [
             ToolCall(id=b["id"], name=b["name"],
                      arguments=json.loads(b["arguments"] or "{}"))
             for _, b in sorted(tool_buf.items())
         ]
-        return Completion(content="".join(content_parts), tool_calls=tool_calls)
+        return Completion(content="".join(content_parts), tool_calls=tool_calls,
+                          reasoning="".join(reasoning_parts))

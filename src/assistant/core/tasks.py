@@ -17,11 +17,13 @@ class TaskRouter:
 
     def route(self, session_id: str, text: str,
               on_delta: Callable[[str], None],
-              on_event: Callable[[AgentEvent], None]
+              on_event: Callable[[AgentEvent], None],
+              on_reasoning: Callable[[str], None] | None = None,
               ) -> str | TaskReport:
         intent = self.classifier.classify(text)
         if intent is Intent.CHAT:
-            return self.chat.stream_reply(session_id, text, on_delta)
+            return self.chat.stream_reply(session_id, text, on_delta,
+                                          on_reasoning=on_reasoning)
         self.sessions.add_message(session_id, "user", text)
         report = self.engine_factory().run_task(text, session_id=session_id)
         if report.summary:

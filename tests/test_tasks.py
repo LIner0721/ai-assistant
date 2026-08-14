@@ -17,8 +17,11 @@ class FakeChat:
     def __init__(self):
         self.called_with = None
 
-    def stream_reply(self, session_id, text, on_delta):
+    def stream_reply(self, session_id, text, on_delta,
+                     on_reasoning=None):
         self.called_with = (session_id, text)
+        if on_reasoning:
+            on_reasoning("思考")
         on_delta("回复")
         return "回复内容"
 

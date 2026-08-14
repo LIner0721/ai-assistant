@@ -1,3 +1,4 @@
+import os
 import sys
 
 from PySide6.QtWidgets import QApplication
@@ -31,8 +32,12 @@ from assistant.ui.main_window import MainWindow
 from assistant.ui.tray import TrayIcon
 
 
+def _thinking(mode: str) -> str | None:
+    """把配置的思考模式映射为 provider 参数：auto 不注入。"""
+    return None if mode in ("", "auto") else mode
+
+
 def _make_secrets() -> SecretsStore:
-    import os
     if os.name == "nt":
         backend = WindowsDpapiBackend()
     else:
@@ -71,7 +76,8 @@ def main() -> None:
     chat = ChatService(sessions, provider, model=lambda: cfg.models.model,
                        system_prompt=persona.active,
                        retriever=retriever, extractor=extractor,
-                       resolver=resolver)
+                       resolver=resolver,
+                       thinking=lambda: _thinking(cfg.models.thinking_mode))
 
     tool_registry = ToolRegistry()
     for tool in (FilesTool(), AppsTool(), ShellTool(), BrowserTool(),
@@ -88,7 +94,8 @@ def main() -> None:
             provider, tool_registry, model=lambda: cfg.models.task_model,
             policy=policy, recorder=recorder,
             confirm=lambda req: ConfirmDialog(req, window).exec() == 1,
-            stop=lambda: window._stop_flag.is_set())
+            stop=lambda: window._stop_flag.is_set(),
+            thinking=lambda: _thinking(cfg.models.thinking_mode))
 
     router = TaskRouter(chat, classifier, make_engine, sessions)
     window = MainWindow(sessions, chat, cfg, secrets, router,

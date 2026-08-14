@@ -69,6 +69,77 @@ def test_stream_tool_calls_accumulate():
     assert result.tool_calls[0].arguments == {"path": "a.txt"}
 
 
+def test_stream_reasoning_deltas():
+    def handler(request: httpx.Request):
+        return httpx.Response(200, content=_sse([
+            {"choices": [{"delta": {"reasoning_content": "让我"}}]},
+            {"choices": [{"delta": {"reasoning_content": "想想"}}]},
+            {"choices": [{"delta": {"content": "答案是 42"}}]},
+        ]))
+
+    provider = OpenAICompatProvider("https://api.deepseek.com/v1", "sk-test")
+    provider._client = httpx.Client(transport=httpx.MockTransport(handler))
+    reasoning, content = [], []
+    result = provider.chat([ChatMessage("user", "hi")], model="deepseek-chat",
+                           on_delta=content.append,
+                           on_reasoning=reasoning.append)
+    assert "".join(reasoning) == "让我想想"
+    assert result.content == "答案是 42"
+    assert "".join(content) == "答案是 42"
+
+
+def test_stream_tool_call_deltas_reported():
+    def handler(request: httpx.Request):
+        return httpx.Response(200, content=_sse([
+            {"choices": [{"delta": {"tool_calls": [
+                {"index": 0, "id": "call_1",
+                 "function": {"name": "read_file", "arguments": ""}}]}}]},
+            {"choices": [{"delta": {"tool_calls": [
+                {"index": 0, "function": {"arguments": "{\"path\":"}}]}}]},
+            {"choices": [{"delta": {"tool_calls": [
+                {"index": 0, "function": {"arguments": "\"a.txt\"}"}}]}}]},
+        ]))
+
+    provider = OpenAICompatProvider("https://api.deepseek.com/v1", "sk-test")
+    provider._client = httpx.Client(transport=httpx.MockTransport(handler))
+    deltas = []
+    result = provider.chat([ChatMessage("user", "read a.txt")],
+                           model="deepseek-chat", on_delta=lambda t: None,
+                           on_tool_delta=deltas.append)
+    assert len(deltas) == 3
+    assert deltas[0].name == "read_file"
+    assert deltas[1].arguments_delta == "{\"path\":"
+    assert deltas[2].arguments_delta == "\"a.txt\"}"
+    assert result.tool_calls[0].arguments == {"path": "a.txt"}
+
+
+def test_thinking_param_sent():
+    def handler(request: httpx.Request):
+        body = json.loads(request.content)
+        assert body["thinking"] == {"type": "enabled"}
+        return httpx.Response(200, json={
+            "choices": [{"message": {"role": "assistant", "content": "ok"}}]
+        })
+
+    provider = OpenAICompatProvider("https://api.deepseek.com/v1", "sk-test")
+    provider._client = httpx.Client(transport=httpx.MockTransport(handler))
+    provider.chat([ChatMessage("user", "hi")], model="deepseek-chat",
+                  thinking="enabled")
+
+
+def test_thinking_param_omitted_when_none():
+    def handler(request: httpx.Request):
+        body = json.loads(request.content)
+        assert "thinking" not in body
+        return httpx.Response(200, json={
+            "choices": [{"message": {"role": "assistant", "content": "ok"}}]
+        })
+
+    provider = OpenAICompatProvider("https://api.deepseek.com/v1", "sk-test")
+    provider._client = httpx.Client(transport=httpx.MockTransport(handler))
+    provider.chat([ChatMessage("user", "hi")], model="deepseek-chat")
+
+
 def test_registry_creates_provider_and_rejects_unknown():
     import pytest
     reg = ProviderRegistry()

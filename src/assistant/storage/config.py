@@ -9,6 +9,7 @@ class ModelConfig:
     model: str = "deepseek-chat"
     task_model: str = "deepseek-chat"
     base_url: str = "https://api.deepseek.com/v1"
+    thinking_mode: str = "auto"   # auto / enabled / disabled
 
 
 @dataclass
